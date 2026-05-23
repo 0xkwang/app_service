@@ -30,19 +30,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+     # (앞부분 Checkout 및 Build 스텝은 그대로 유지)
+
       # 2. Docker 이미지 빌드 및 GHCR로 Push
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          # 태그 예시: ghcr.io/0xkwang/docker-github:latest
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
-      # 3. Publish Profile을 이용한 Azure App Service 배포
-      - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: 'my-docker-app' # ⚠️ 실제 Azure App Service 이름으로 반드시 수정할 것
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          images: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest'
+      # 3. 멍청한 공식 Action 대신, Webhook을 직접 타격하여 Azure에 배포 명령 하달
+      - name: Trigger Azure App Service Webhook
+        run: |
+          curl -X POST -d "" "${{ secrets.AZURE_WEBHOOK_URL }}"
+          echo "Webhook 트리거 완료. Azure가 백그라운드에서 새 이미지를 Pull 합니다."
