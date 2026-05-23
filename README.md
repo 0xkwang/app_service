@@ -1,6 +1,6 @@
-# 🐳 Docker + GitHub Actions + Azure App Service CI/CD 파이프라인
+# 🐳 Docker → Azure App Service 직접 배포
 
-**GitHub Actions를 통해 Docker 이미지를 자동으로 빌드하고 Azure App Service에 배포하는 완전한 CI/CD 파이프라인**
+**GitHub Actions를 통해 Docker 이미지를 App Service에 직접 배포 (ACR 없음)**
 
 ---
 
@@ -8,294 +8,159 @@
 
 ```
 .
-├── Dockerfile                    # Docker 이미지 정의 (멀티 스테이지 빌드)
 ├── app.js                        # Node.js 웹 애플리케이션
-├── package.json                  # 프로젝트 메타데이터 및 스크립트
-├── .dockerignore                 # Docker 빌드 컨텍스트 최적화
-├── .gitignore                    # Git 추적 제외 파일
+├── package.json                  # 프로젝트 설정
+├── Dockerfile                    # Docker 이미지 정의
+├── .gitignore                    # Git 추적 제외
+├── .dockerignore                 # Docker 빌드 최적화
+├── DEPLOYMENT_GUIDE.md           # 배포 가이드
 └── .github/
     └── workflows/
-        └── azure-deploy.yml      # GitHub Actions 워크플로우 (핵심 CI/CD)
+        └── azure-deploy.yml      # GitHub Actions 워크플로우
 ```
 
 ---
 
-## 🚀 빠른 시작
+## 🚀 배포 방식 (간단 버전)
 
-### 1️⃣ **로컬 테스트**
-
-```bash
-# 의존성 설치
-npm install
-
-# 앱 실행
-npm start
-
-# 헬스체크
-curl http://localhost:3000/health
 ```
-
-### 2️⃣ **Docker 빌드 및 실행**
-
-```bash
-# 이미지 빌드
-docker build -t docker-azure-app:latest .
-
-# 컨테이너 실행
-docker run -p 3000:3000 docker-azure-app:latest
-
-# 접속
-curl http://localhost:3000/
-```
-
-### 3️⃣ **GitHub에 푸시 (자동 배포)**
-
-```bash
-git add .
-git commit -m "feat: Add Docker CI/CD pipeline"
-git push origin main
-
-# GitHub Actions 자동 실행
-# → Docker 빌드 & ACR 푸시
-# → Azure App Service 배포
+GitHub (코드) 
+  → Push to main
+  → GitHub Actions (docker build)
+  → App Service (컨테이너 시작)
+  → https://my-docker-app.azurewebsites.net ✅
 ```
 
 ---
 
-## 🔧 Azure 리소스 설정
+## 🔧 필수 설정
 
-### **필수 설정 (한 번만)**
+### 1. Azure 리소스 생성
 
 ```bash
-# 1. 리소스 그룹 생성
-az group create --name my-resource-group --location eastus
+# 리소스 그룹
+az group create --name st707-githubactions-azureserver --location eastus
 
-# 2. Container Registry 생성
-az acr create \
-  --resource-group my-resource-group \
-  --name myregistry \
-  --sku Basic
-
-# 3. App Service 플랜 생성
+# App Service 플랜
 az appservice plan create \
   --name my-app-service-plan \
-  --resource-group my-resource-group \
-  --sku B1 \
-  --is-linux
+  --resource-group st707-githubactions-azureserver \
+  --sku B1 --is-linux
 
-# 4. App Service 생성 (Docker 컨테이너용)
+# Web App
 az webapp create \
-  --resource-group my-resource-group \
+  --resource-group st707-githubactions-azureserver \
   --plan my-app-service-plan \
   --name my-docker-app \
-  --deployment-container-image-name myregistry.azurecr.io/docker-azure-app:latest
-
-# 5. ACR 연결
-az webapp config container set \
-  --name my-docker-app \
-  --resource-group my-resource-group \
-  --docker-custom-image-name myregistry.azurecr.io/docker-azure-app:latest \
-  --docker-registry-server-url https://myregistry.azurecr.io \
-  --docker-registry-server-user myregistry \
-  --docker-registry-server-password 'PASSWORD'
+  --deployment-container-image-name docker-azure-app:latest
 ```
 
----
+### 2. GitHub Secrets 설정 (1개만!)
 
-## 🔐 GitHub Secrets 설정
-
-**Settings → Secrets and variables → Actions**에서 다음 4개 추가:
+**Settings → Secrets and variables → Actions → New repository secret**
 
 ```
-AZURE_REGISTRY_USERNAME = myregistry
-AZURE_REGISTRY_PASSWORD = (ACR 비밀번호)
-AZURE_CREDENTIALS = (Service Principal JSON)
-AZURE_DEPLOYMENT_WEBHOOK_URL = (배포 웹훅 URL)
+Name: AZURE_CREDENTIALS
+Value: (Service Principal JSON - 아래 참고)
 ```
 
-### 값 구하기
-
+**Service Principal 생성:**
 ```bash
-# ACR 자격증명
-az acr credential show --resource-group my-resource-group --name myregistry
-
-# Service Principal 생성
 az ad sp create-for-rbac \
   --name "github-actions" \
   --role "Contributor" \
-  --scopes /subscriptions/{subscription-id}/resourceGroups/my-resource-group
-
-# Webhook URL
-az webapp deployment container config \
-  --resource-group my-resource-group \
-  --name my-docker-app \
-  --enable-cd true
-
-az webapp deployment container show-cd-url \
-  --resource-group my-resource-group \
-  --name my-docker-app
-```
-
----
-
-## 📊 CI/CD 파이프라인 동작
-
-```
-┌─────────────────────────────────────────────────┐
-│ git push origin main                             │
-└──────────────────┬──────────────────────────────┘
-                   │
-┌──────────────────▼──────────────────────────────┐
-│ GitHub Actions 트리거 (azure-deploy.yml)        │
-└──────────────────┬──────────────────────────────┘
-                   │
-┌──────────────────▼──────────────────────────────┐
-│ Job: Build                                       │
-│ ├─ Checkout repository                          │
-│ ├─ Setup Docker Buildx                          │
-│ ├─ Login to ACR                                 │
-│ └─ Build & Push image                           │
-│    └─ myregistry.azurecr.io/docker-azure-app   │
-└──────────────────┬──────────────────────────────┘
-                   │
-┌──────────────────▼──────────────────────────────┐
-│ Job: Deploy (main 브랜치만)                     │
-│ ├─ Login to Azure                               │
-│ ├─ Deploy to App Service                        │
-│ ├─ Wait 30s                                     │
-│ ├─ Health Check (/health)                       │
-│ └─ Success Log                                  │
-└──────────────────┬──────────────────────────────┘
-                   │
-┌──────────────────▼──────────────────────────────┐
-│ 배포 완료 ✅                                     │
-│ https://my-docker-app.azurewebsites.net         │
-└──────────────────────────────────────────────────┘
+  --scopes /subscriptions/$(az account show --query id -o tsv)/resourceGroups/st707-githubactions-azureserver
 ```
 
 ---
 
 ## 📡 API 엔드포인트
 
-배포 후 다음 URL로 접근 가능:
+배포 후:
 
-| 엔드포인트 | 메서드 | 설명 |
-|-----------|--------|------|
-| `/` | GET | 기본 상태 정보 |
-| `/health` | GET | 헬스체크 (메모리, 가동 시간) |
-| `/api/system` | GET | 시스템 정보 (CPU, 메모리 등) |
-
-**예시:**
 ```bash
-curl https://my-docker-app.azurewebsites.net/
-# {
-#   "status": "healthy",
-#   "service": "Docker CI/CD Pipeline",
-#   "version": "1.0.0",
-#   "hostname": "container-id",
-#   "uptime": 125.432
-# }
+GET https://my-docker-app.azurewebsites.net/
+# → {"status": "healthy", "version": "1.0.0", ...}
 
-curl https://my-docker-app.azurewebsites.net/health
-# {
-#   "status": "OK",
-#   "checks": {
-#     "memory": {...},
-#     "uptime": 125.432
-#   }
-# }
+GET https://my-docker-app.azurewebsites.net/health
+# → {"status": "OK", ...}
+
+GET https://my-docker-app.azurewebsites.net/api/system
+# → {"node_version": "v18.x", "platform": "linux", ...}
 ```
 
 ---
 
-## 🔍 내부 동작 분석
+## ⚡ 빠른 배포
 
-### **멀티 스테이지 Docker 빌드**
+```bash
+# 1. 파일 준비 (이미 있음)
+# 2. GitHub에 푸시
+git add .
+git commit -m "feat: Add Docker CI/CD"
+git push origin main
 
-```dockerfile
-Stage 1 (Builder)
-  ├─ node:18-alpine (빌드 도구 포함)
-  ├─ npm install --production
-  └─ node_modules 생성
-
-Stage 2 (Runtime)
-  ├─ node:18-alpine (최소 이미지)
-  ├─ builder에서 node_modules 복사
-  ├─ app.js 복사
-  └─ 최종 크기: ~150MB (vs 700MB 단계별)
+# 3. GitHub Actions 자동 실행 (2-3분)
+# 4. 접속
+https://my-docker-app.azurewebsites.net
 ```
 
-**보안 이점:**
-- 최종 이미지에 빌드 도구 미포함
-- 소스 코드 개발 의존성 미노출
-- 컨테이너 탈출 시 공격 면적 ↓
+---
 
-### **GitHub Actions 권한 격리**
+## 🎯 비교: ACR vs 직접 배포
 
-```yaml
-secrets.AZURE_REGISTRY_PASSWORD
-  ├─ 로그에 자동 마스킹
-  ├─ 워크플로우 내에서만 접근 가능
-  └─ 노출 시 즉시 교체 필요
+| 항목 | ACR | 직접 배포 |
+|------|-----|---------|
+| 복잡도 | 중간 | 낮음 ✓ |
+| 비용 | ACR 추가 | 0 ✓ |
+| 빌드 시간 | 30초 (캐싱) | 2분 (매번) |
+| 롤백 | 가능 | 불가능 |
+| 버전 관리 | 가능 | 불가능 |
 
-secrets.AZURE_CREDENTIALS
-  ├─ Service Principal (임시 토큰처럼 작동)
-  ├─ 최소 권한 원칙 (특정 리소스 그룹만)
-  └─ 시간 제한 설정 가능
-```
+**언제 사용?**
+- 학습 목적 ✓ (이 과제)
+- 개발 환경 ✓
+- 소규모 프로젝트 ✓
+- 비용 최소화 ✓
+
+**프로덕션은?**
+- ACR 권장 (롤백, 버전 관리, 성능)
 
 ---
 
 ## 🛠️ 문제 해결
 
-### **배포 실패: "Failed to push image"**
-
+### 배포 실패
 ```bash
-# ACR 로그인 확인
-az acr login --name myregistry
+# 1. GitHub Actions 로그 확인
+GitHub Repository → Actions 탭 → 최신 workflow
 
-# 이미지 테스트
-docker push myregistry.azurecr.io/docker-azure-app:latest
+# 2. App Service 로그 확인
+az webapp log tail --resource-group st707-githubactions-azureserver --name my-docker-app
+
+# 3. 로컬 테스트
+docker build -t test:latest .
+docker run -p 3000:3000 test:latest
 ```
 
-### **App Service 시작 안 됨**
-
+### Health Check 실패
 ```bash
-# 로그 확인
-az webapp log tail --resource-group my-resource-group --name my-docker-app
+# 헬스체크 재시도
+curl -v https://my-docker-app.azurewebsites.net/health
 
-# 포트 확인 (PORT 환경변수)
-az webapp config appsettings list \
-  --resource-group my-resource-group \
-  --name my-docker-app
-```
+# 포트 확인 (반드시 3000)
+grep EXPOSE Dockerfile
 
-### **GitHub Actions 실패**
-
-```
-Actions 탭 → 실패한 워크플로우 → 로그 확인
+# 환경 변수 확인
+az webapp config appsettings list --resource-group st707-githubactions-azureserver --name my-docker-app
 ```
 
 ---
 
-## 🎓 학습 포인트
+## 📖 상세 가이드
 
-1. **CI/CD 파이프라인**: 자동화된 빌드 & 배포
-2. **Docker 멀티 스테이지 빌드**: 이미지 최적화 & 보안
-3. **GitHub Actions**: 워크플로우 기반 자동화
-4. **Azure 리소스**: Container Registry, App Service
-5. **권한 관리**: RBAC, Service Principal, Secrets
+**DEPLOYMENT_GUIDE.md 참고** (Step-by-step 배포 방법)
 
 ---
 
-## 📖 추가 자료
-
-- [Docker 멀티 스테이지 빌드](https://docs.docker.com/build/building/multi-stage/)
-- [GitHub Actions 문법](https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions)
-- [Azure App Service 배포](https://learn.microsoft.com/en-us/azure/app-service/)
-
----
-
-## 📝 라이선스
-
-MIT License
+**축하합니다! 🎉 간단한 CI/CD 파이프라인이 준비되었습니다.**

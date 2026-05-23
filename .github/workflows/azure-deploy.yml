@@ -1,111 +1,48 @@
-name: Docker Build & Deploy to Azure App Service
+name: Build and Deploy to Azure App Service (via GHCR)
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
+    branches: [ "main" ]
 
 env:
-  REGISTRY: myregistry.azurecr.io
-  IMAGE_NAME: docker-azure-app
-  AZURE_APP_NAME: my-docker-app
-  AZURE_RESOURCE_GROUP: st707-githubactions-azureserver
+  REGISTRY: ghcr.io
+  # GitHub 레포지토리 이름을 소문자로 변환하여 이미지 이름으로 사용
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
+    
+    # GHCR(GitHub Container Registry)에 이미지를 Push하기 위한 필수 권한 부여
     permissions:
       contents: read
-      packages: write
-    
-    outputs:
-      image-tag: ${{ steps.meta.outputs.tags }}
-    
+      packages: write 
+
     steps:
-      - name: 📥 Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
-      
-      - name: 🔧 Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: 🔐 Login to Azure Container Registry
+
+      # 1. GitHub Container Registry 로그인 (내장된 GITHUB_TOKEN 사용)
+      - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.AZURE_REGISTRY_USERNAME }}
-          password: ${{ secrets.AZURE_REGISTRY_PASSWORD }}
-      
-      - name: 📝 Extract metadata for Docker image
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=sha,prefix={{branch}}-
-            type=semver,pattern={{version}}
-            latest
-      
-      - name: 🐳 Build and push Docker image
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 2. Docker 이미지 빌드 및 GHCR로 Push
+      - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
-  
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
-    steps:
-      - name: 📥 Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: 🔐 Login to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: 🚀 Deploy to Azure App Service
-        uses: azure/webapps-deploy@v2
-        with:
-          app-name: ${{ env.AZURE_APP_NAME }}
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-      
-      - name: ⏳ Wait for deployment
-        run: sleep 30
-      
-      - name: ✅ Verify deployment
-        run: |
-          HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            "https://${{ env.AZURE_APP_NAME }}.azurewebsites.net/health")
-          
-          if [ "$HEALTH_STATUS" = "200" ]; then
-            echo "✅ 배포 성공! App Service가 정상 작동 중입니다."
-            echo "🌐 접속 URL: https://${{ env.AZURE_APP_NAME }}.azurewebsites.net"
-          else
-            echo "❌ 배포 실패! HTTP 상태 코드: $HEALTH_STATUS"
-            exit 1
-          fi
-      
-      - name: 📊 Log deployment summary
-        run: |
-          echo "=================================="
-          echo "✅ CI/CD 파이프라인 완료!"
-          echo "=================================="
-          echo "이미지: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-          echo "App Service: ${{ env.AZURE_APP_NAME }}"
-          echo "URL: https://${{ env.AZURE_APP_NAME }}.azurewebsites.net"
-          echo "Commit: ${{ github.sha }}"
-          echo "Branch: ${{ github.ref }}"
-          echo "=================================="
+          # 태그 예시: ghcr.io/0xkwang/docker-github:latest
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
-permissions:
-  contents: read
-  packages: write
+      # 3. Publish Profile을 이용한 Azure App Service 배포
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: 'my-docker-app' # ⚠️ 실제 Azure App Service 이름으로 반드시 수정할 것
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          images: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest'
