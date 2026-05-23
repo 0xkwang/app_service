@@ -1,0 +1,74 @@
+# ========================
+# Node.js 관련
+# ========================
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+.npm
+.eslintcache
+package-lock.json
+yarn.lock
+
+# ========================
+# 환경 변수 파일 (보안)
+# ========================
+.env
+.env.local
+.env.*.local
+
+# ========================
+# IDE/Editor 관련
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# ========================
+# OS 관련
+# ========================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ========================
+# 빌드 산출물
+# ========================
+dist/
+build/
+*.o
+*.so
+*.a
+*.lib
+
+# ========================
+# Docker 관련
+# ========================
+.dockerignore
+docker-compose.override.yml
+
+# ========================
+# 테스트 커버리지
+# ========================
+coverage/
+.nyc_output/
+
+# ========================
+# 임시 파일
+# ========================
+*.tmp
+*.temp
+*.log
