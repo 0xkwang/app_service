@@ -1,42 +1,16 @@
-node_modules/
-npm-debug.log
-yarn-debug.log
-yarn-error.log
-.npm
-.eslintcache
-package-lock.json
-yarn.lock
+# Python 캐시 파일
+__pycache__/
+*.py[cod]
+*$py.class
 
+# 가상 환경 (Local Virtual Environment)
+venv/
+env/
+.venv/
+
+# 환경 변수 및 시크릿 (절대 깃허브에 올라가면 안 되는 파일)
 .env
-.env.local
-.env.*.local
 
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# OS 찌꺼기 파일
 .DS_Store
-.project
-.classpath
-.c9/
-*.launch
-.settings/
-*.sublime-workspace
-
-dist/
-build/
-*.o
-*.so
-*.a
-*.lib
-
-.dockerignore
-docker-compose.override.yml
-
-coverage/
-.nyc_output/
-
-*.tmp
-*.temp
-*.log
+Thumbs.db
