@@ -5,7 +5,7 @@ on:
     branches: [ "main" ]
 
 env:
-  AZURE_WEBAPP_NAME: 'st707-app' # 본인의 앱 이름 확인!
+  AZURE_WEBAPP_NAME: 'appservice' # 본인의 앱 이름 확인!
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
